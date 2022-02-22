@@ -1,0 +1,26 @@
+{
+    "name": "FintechX Worklog Sync",
+    "description": "Sync your worklog from Clockify to FintechX JIRA",
+    "version": "1.0",
+    "manifest_version": 3,
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "https://api.clockify.me/api/v1/*",
+        "https://fintechx.atlassian.net/rest/api/3/*"
+    ],
+    "action": {
+        "default_popup": "index.html"
+    },
+    "background": {
+        "service_worker": "background.js",
+        "type": "module"
+    },
+    "offline_enabled": false,
+    "icons": {
+        "16": "images/icon16.png",
+        "48": "images/icon48.png",
+        "128": "images/icon128.png"
+    }
+}

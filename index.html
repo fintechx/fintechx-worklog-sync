@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <link href="css/style.css" rel="stylesheet" media="screen">
+  <link href="vendor/bootstrap/bootstrap.min.css" rel="stylesheet" media="screen">
+  <script src="vendor/bootstrap/bootstrap.bundle.min.js"></script>
+  <script src="js/content.js"></script>
+</head>
+
+<body>
+  <div class="container d-flex align-items-center justify-content-center">
+    <img src="images/logo.png" class="img-fluid">
+  </div>
+  <div class="container d-flex align-items-center justify-content-center input-group mb-3">
+    <span id="clockifyApiKeyLabel" class="input-group-text">Clockify API Key:</span>
+    <input id="clockifyApiKeyText" type="text" class="form-control" aria-describedby="clockifyApiKeyLabel">
+  </div>
+  <div class="container d-flex align-items-center justify-content-center input-group mb-3">
+    <span id="jiraEmailLabel" class="input-group-text">JIRA email:</span>
+    <input id="jiraEmailText" class="form-control" type="text" aria-describedby="jiraEmailLabel">
+  </div>
+  <div class="container d-flex align-items-center justify-content-center input-group mb-3">
+    <span id="jiraApiTokenLabel" class="input-group-text">JIRA API Token:</span>
+    <input id="jiraApiTokenText" class="form-control" type="text" aria-describedby="jiraApiTokenLabel">
+  </div>
+  </div>
+  <div class="container d-flex align-items-center justify-content-center">
+    <button id="syncButton" type="button" class="btn btn-outline-primary">Szinkronizálás</button>
+    <button id="clearDataButton" type="button" class="btn btn-outline-primary">Adatok törlése</button>
+  </div>
+</body>
+
+</html>
