@@ -92,7 +92,7 @@ async function startSync() {
     const worklogsWithError = [];
     for (const worklog of worklogsFromClockify) {
         const issueKey = worklog.description.split(" ")[0];
-        if (!issueKey.startsWith("FTB-") && !issueKey.startsWith("FXG-") && !issueKey.startsWith("AG8-") && !issueKey.startsWith("FXA-")) {
+        if (!issueKey.startsWith("FTB-") && !issueKey.startsWith("FXG-") && !issueKey.startsWith("AG8-") && !issueKey.startsWith("FXA-") && !issueKey.startsWith("SCR-")) {
             console.log(`${new Date().toISOString()} | ERROR | sync | startSync | Worklog does not contain a valid issue key. IssueKey: ${issueKey})}`);
             worklogsWithError.push(worklog);
             continue;
