@@ -34,7 +34,7 @@ async function getWorklogsFromClockify(clockifyApiKey) {
 
 async function getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, startDateInRequest, clockifyApiKey) {
     const filteredTimeEntries = [];
-    const response = await fetch(`https://api.clockify.me/api/v1/workspaces/${clockifyWorkspaceId}/user/${clockifyUserId}/time-entries?start=${startDateInRequest.toISOString()}&page-size=5000&in-progress=false`, { headers: { "X-Api-Key": `${clockifyApiKey}` } });
+    const response = await fetch(`https://api.clockify.me/api/v1/workspaces/${clockifyWorkspaceId}/user/${clockifyUserId}/time-entries?start=${startDateInRequest.toISOString()}&page-size=1000&in-progress=false`, { headers: { "X-Api-Key": `${clockifyApiKey}` } });
     const parsedResponse = await response.json();
     if (!response.ok) {
         throw new Error(`An error has occured: ${response.status} Response: ${JSON.stringify(parsedResponse)}`);
