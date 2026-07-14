@@ -39,8 +39,12 @@ async function getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, s
     if (!response.ok) {
         throw new Error(`An error has occured: ${response.status} Response: ${JSON.stringify(parsedResponse)}`);
     }
+    let synchronizedTagId = await getSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
+    if (!synchronizedTagId) {
+        synchronizedTagId = await createSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
+    }
     for (const timeEntry of parsedResponse) {
-        if (!timeEntry.billable) {
+        if (!timeEntry.tagIds?.includes(synchronizedTagId) && !timeEntry.billable) {
             let start = new Date(timeEntry.timeInterval.start);
             let end = new Date(timeEntry.timeInterval.end);
             const durationInSeconds = (end.getTime() - start.getTime()) / 1000;
@@ -53,6 +57,7 @@ async function getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, s
                 durationInMinutes: durationInMinutes,
                 description: timeEntry.description,
                 billable: timeEntry.billable,
+                tagIds: timeEntry.tagIds,
                 workspaceId: clockifyWorkspaceId,
                 clockifyDetails: timeEntry
             });
@@ -83,6 +88,27 @@ async function getUserIdFromClockify(clockifyApiKey) {
     return parsedResponse.id;
 }
 
+async function getSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey) {
+    const getTagResponse = await fetch(`https://api.clockify.me/api/v1/workspaces/${clockifyWorkspaceId}/tags?name=Synchronized&strict-name-search=true`, { headers: { "X-Api-Key": `${clockifyApiKey}` } });
+    const parsedGetTagResponse = await getTagResponse.json();
+    if (!getTagResponse.ok) {
+        throw new Error(`An error has occured: ${getTagResponse.status} Response: ${JSON.stringify(parsedGetTagResponse)}`);
+    }
+    return parsedGetTagResponse[0]?.id;
+}
+
+async function createSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey) {
+    const body = {
+        name: "Synchronized",
+    }
+    const createTagResponse = await fetch(`https://api.clockify.me/api/v1/workspaces/${clockifyWorkspaceId}/tags`, { method: 'POST', headers: { 'X-Api-Key': `${clockifyApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const parsedCreateTagResponse = await createTagResponse.json();
+    if (!createTagResponse.ok) {
+        throw new Error(`An error has occured: ${createTagResponse.status} Response: ${JSON.stringify(parsedCreateTagResponse)}`);
+    }
+    return parsedCreateTagResponse.id;
+}
+
 async function startSync() {
     const clockifyApiKey = await getDetailFromStorage("clockifyApiKey");
     const jiraEmail = await getDetailFromStorage("jiraEmail");
@@ -92,18 +118,13 @@ async function startSync() {
     const worklogsWithError = [];
     for (const worklog of worklogsFromClockify) {
         const issueKey = worklog.description.split(" ")[0];
-        if (!issueKey.startsWith("FTB-") && !issueKey.startsWith("FXG-") && !issueKey.startsWith("AG8-") && !issueKey.startsWith("FXA-") && !issueKey.startsWith("SCR-")) {
-            console.log(`${new Date().toISOString()} | ERROR | sync | startSync | Worklog does not contain a valid issue key. IssueKey: ${issueKey})}`);
-            worklogsWithError.push(worklog);
-            continue;
-        }
         const comment = worklog.description.split("| ")[1];
         console.log(`${new Date().toISOString()} | INFO | sync | syncWorklogs | Log work to JIRA: ${JSON.stringify({ issueKey: issueKey, durationInMinutes: worklog.durationInMinutes, comment: comment, started: worklog.start })}`);
         try {
             await addWorklogToJira(issueKey, worklog.durationInMinutes, comment, worklog.start, jiraEmail, jiraToken);
-            const billableSuccessfullyEdited = await setBillableFlagToTrueOfClockifyWorklog(worklog, clockifyApiKey);
-            if (!billableSuccessfullyEdited) {
-                console.log(`${new Date().toISOString()} | ERROR | ${issueKey} | ${worklog.durationInMinutes}m | from: ${worklog.started} | id: ${worklog.id} | Set billable flag to Clockify time entry was not successful`);
+            const synchronizedTagSuccessfullyAdded = await addSynchronizedTagToClockifyWorklog(worklog, clockifyApiKey);
+            if (!synchronizedTagSuccessfullyAdded) {
+                console.log(`${new Date().toISOString()} | ERROR | ${issueKey} | ${worklog.durationInMinutes}m | from: ${worklog.started} | id: ${worklog.id} | Add Synchronized tag to Clockify time entry was not successful`);
                 worklogsWithError.push({ issueKey: issueKey, durationInMinutes: worklog.durationInMinutes, comment: comment, started: worklog.start });
             }
         } catch (error) {
@@ -161,23 +182,30 @@ async function getIssueFromJira(issueKey, jiraEmail, jiraToken) {
     return parsedResponse;
 }
 
-async function setBillableFlagToTrueOfClockifyWorklog(worklog, clockifyApiKey) {
+async function addSynchronizedTagToClockifyWorklog(worklog, clockifyApiKey) {
+    const synchronizedTagId = await getSynchronizedTagInClockify(worklog.workspaceId, clockifyApiKey);
+    let worklogTagIds = worklog.clockifyDetails.tagIds;
+    if (!worklogTagIds) {
+        worklogTagIds = [synchronizedTagId];
+    } else {
+        worklogTagIds.push(synchronizedTagId);
+    }
     const body = {
         start: worklog.clockifyDetails.timeInterval.start,
         end: worklog.clockifyDetails.timeInterval.end,
-        billable: true,
+        billable: worklog.clockifyDetails.billable,
         description: worklog.clockifyDetails.description,
         projectId: worklog.clockifyDetails.projectId,
         taskId: worklog.clockifyDetails.taskId,
         customFields: worklog.clockifyDetails.customFields,
-        tagIds: worklog.clockifyDetails.tagIds
+        tagIds: worklogTagIds
     }
     const response = await fetch(`https://api.clockify.me/api/v1/workspaces/${worklog.workspaceId}/time-entries/${worklog.id}`, { method: 'PUT', headers: { "X-Api-Key": `${clockifyApiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const parsedResponse = await response.json();
     if (!response.ok) {
         throw new Error(`An error has occured: ${response.status} Response: ${JSON.stringify(parsedResponse)}`);
     }
-    return parsedResponse.billable;
+    return true;
 }
 
 function getDetailFromStorage(detailName) {
