@@ -6,7 +6,7 @@ Chrome extension which creates work logs in FintechX JIRA by time entries in Clo
 
 ## How to create time entries in Clockify?
 
-- Start with `FTB-`, `FXG-`, `AG8-`, or `FXA-` string and follow it with some numeric character (identification of JIRA ticket, example: `FTB-12537`)
+- Start with the identification of the JIRA ticket, example: `FTB-12537`
 - and follow with any alphanumeric or space character
 - and if contain `|` character follow it with a space character (comment of JIRA work log)
 - and follow it with any character
