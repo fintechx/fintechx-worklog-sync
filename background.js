@@ -44,7 +44,7 @@ async function getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, s
         synchronizedTagId = await createSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
     }
     for (const timeEntry of parsedResponse) {
-        if (!timeEntry.tagIds?.includes(synchronizedTagId) && !timeEntry.billable) {
+        if (!timeEntry.tagIds?.includes(synchronizedTagId)) {
             let start = new Date(timeEntry.timeInterval.start);
             let end = new Date(timeEntry.timeInterval.end);
             const durationInSeconds = (end.getTime() - start.getTime()) / 1000;
