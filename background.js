@@ -6,6 +6,8 @@ chrome.runtime.onMessage.addListener(
             if (request.action && request.action === "startSync") {
                 startSync().then(() => {
                     sendResponse({ status: "OK" });
+                }).catch((error) => {
+                    sendResponse({ status: "NOK", description: JSON.stringify(error) });
                 });
             } else {
                 throw new Error(`Invalid action in request. Action: ${request.action}`);
@@ -17,53 +19,62 @@ chrome.runtime.onMessage.addListener(
     }
 );
 
-async function getWorklogsFromClockify(clockifyApiKey) {
+async function getSynchronizedTagIdsFromClockify(clockifyApiKey, clockifyWorkspaceIds) {
+    let synchronizedTagIds = {};
+    for (let clockifyWorkspaceId of clockifyWorkspaceIds) {
+        let synchronizedTagId = await getOrCreateSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
+        synchronizedTagIds[clockifyWorkspaceId] = synchronizedTagId;
+    }
+    return synchronizedTagIds;
+}
+
+async function getWorklogsFromClockify(clockifyApiKey, clockifyWorkspaceIds, clockifyUserId) {
     let startDateInRequest = new Date();
     startDateInRequest.setMonth(startDateInRequest.getMonth() - 1);
     startDateInRequest.setHours(0, 0, 0, 0);
 
-    const clockifyWorkspaceIds = await getWorkspacesFromClockify(clockifyApiKey);
-    const clockifyUserId = await getUserIdFromClockify(clockifyApiKey);
-    let filteredTimeEntries = [];
+    let timeEntries = [];
     for (let clockifyWorkspaceId of clockifyWorkspaceIds) {
-        const filteredTimeEntriesFromWorkspace = await getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, startDateInRequest, clockifyApiKey);
-        filteredTimeEntries = filteredTimeEntries.concat(filteredTimeEntriesFromWorkspace);
+        const timeEntriesFromWorkspace = await getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, startDateInRequest, clockifyApiKey);
+        timeEntries = timeEntries.concat(timeEntriesFromWorkspace);
     }
-    return filteredTimeEntries;
+    return timeEntries;
 }
 
 async function getTimeEntriesFromClockify(clockifyWorkspaceId, clockifyUserId, startDateInRequest, clockifyApiKey) {
-    const filteredTimeEntries = [];
+    const timeEntries = [];
     const response = await fetch(`https://api.clockify.me/api/v1/workspaces/${clockifyWorkspaceId}/user/${clockifyUserId}/time-entries?start=${startDateInRequest.toISOString()}&page-size=1000&in-progress=false`, { headers: { "X-Api-Key": `${clockifyApiKey}` } });
     const parsedResponse = await response.json();
     if (!response.ok) {
         throw new Error(`An error has occured: ${response.status} Response: ${JSON.stringify(parsedResponse)}`);
     }
-    let synchronizedTagId = await getSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
-    if (!synchronizedTagId) {
-        synchronizedTagId = await createSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
-    }
     for (const timeEntry of parsedResponse) {
-        if (!timeEntry.tagIds?.includes(synchronizedTagId)) {
-            let start = new Date(timeEntry.timeInterval.start);
-            let end = new Date(timeEntry.timeInterval.end);
-            const durationInSeconds = (end.getTime() - start.getTime()) / 1000;
-            const durationInMinutes = Math.ceil(durationInSeconds / 60);
-            filteredTimeEntries.push({
-                id: timeEntry.id,
-                start: `${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}T${start.getHours()}:${start.getMinutes()}:${start.getSeconds()}.${start.getMilliseconds()}+0100`,
-                end: `${end.getFullYear()}-${end.getMonth() + 1}-${end.getDate()}T${end.getHours()}:${end.getMinutes()}:${end.getSeconds()}.${end.getMilliseconds()}+0100`,
-                durationInSeconds: durationInSeconds,
-                durationInMinutes: durationInMinutes,
-                description: timeEntry.description,
-                billable: timeEntry.billable,
-                tagIds: timeEntry.tagIds,
-                workspaceId: clockifyWorkspaceId,
-                clockifyDetails: timeEntry
-            });
-        }
+        let start = new Date(timeEntry.timeInterval.start);
+        let end = new Date(timeEntry.timeInterval.end);
+        const durationInSeconds = (end.getTime() - start.getTime()) / 1000;
+        const durationInMinutes = Math.ceil(durationInSeconds / 60);
+        timeEntries.push({
+            id: timeEntry.id,
+            start: `${start.getFullYear()}-${start.getMonth() + 1}-${start.getDate()}T${start.getHours()}:${start.getMinutes()}:${start.getSeconds()}.${start.getMilliseconds()}+0100`,
+            end: `${end.getFullYear()}-${end.getMonth() + 1}-${end.getDate()}T${end.getHours()}:${end.getMinutes()}:${end.getSeconds()}.${end.getMilliseconds()}+0100`,
+            durationInSeconds: durationInSeconds,
+            durationInMinutes: durationInMinutes,
+            description: timeEntry.description,
+            billable: timeEntry.billable,
+            tagIds: timeEntry.tagIds,
+            workspaceId: clockifyWorkspaceId,
+            clockifyDetails: timeEntry
+        });
     }
-    return filteredTimeEntries;
+    return timeEntries;
+}
+
+function filterClockifyTimeEntriesBySynchronizedTag(timeEntries, synchronizedTagIds) {
+    return timeEntries.filter((timeEntry) => {
+        const synchronizedTagId = synchronizedTagIds[timeEntry.workspaceId];
+        const currentTags = timeEntry.tagIds || [];
+        return !currentTags.includes(synchronizedTagId);
+    })
 }
 
 async function getWorkspacesFromClockify(clockifyApiKey) {
@@ -86,6 +97,14 @@ async function getUserIdFromClockify(clockifyApiKey) {
         throw new Error(`An error has occured: ${response.status} Response: ${JSON.stringify(parsedResponse)}`);
     }
     return parsedResponse.id;
+}
+
+async function getOrCreateSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey) {
+    let synchronizedTagId = await getSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
+    if (!synchronizedTagId) {
+        synchronizedTagId = await createSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey);
+    }
+    return synchronizedTagId;
 }
 
 async function getSynchronizedTagInClockify(clockifyWorkspaceId, clockifyApiKey) {
@@ -114,15 +133,21 @@ async function startSync() {
     const jiraEmail = await getDetailFromStorage("jiraEmail");
     const jiraToken = await getDetailFromStorage("jiraToken");
 
-    const worklogsFromClockify = await getWorklogsFromClockify(clockifyApiKey);
+    const clockifyWorkspaceIds = await getWorkspacesFromClockify(clockifyApiKey);
+    const clockifyUserId = await getUserIdFromClockify(clockifyApiKey);
+    const worklogsFromClockify = await getWorklogsFromClockify(clockifyApiKey, clockifyWorkspaceIds, clockifyUserId);
+    const synchronizedTagIds = await getSynchronizedTagIdsFromClockify(clockifyApiKey, clockifyWorkspaceIds);
+    const filteredWorklogsFromClockify = filterClockifyTimeEntriesBySynchronizedTag(worklogsFromClockify, synchronizedTagIds);
+
     const worklogsWithError = [];
-    for (const worklog of worklogsFromClockify) {
+    for (const worklog of filteredWorklogsFromClockify) {
         const issueKey = worklog.description.split(" ")[0];
         const comment = worklog.description.split("| ")[1];
+        const synchronizedTagId = synchronizedTagIds[worklog.workspaceId];
         console.log(`${new Date().toISOString()} | INFO | sync | syncWorklogs | Log work to JIRA: ${JSON.stringify({ issueKey: issueKey, durationInMinutes: worklog.durationInMinutes, comment: comment, started: worklog.start })}`);
         try {
             await addWorklogToJira(issueKey, worklog.durationInMinutes, comment, worklog.start, jiraEmail, jiraToken);
-            const synchronizedTagSuccessfullyAdded = await addSynchronizedTagToClockifyWorklog(worklog, clockifyApiKey);
+            const synchronizedTagSuccessfullyAdded = await addSynchronizedTagToClockifyWorklog(worklog, synchronizedTagId, clockifyApiKey);
             if (!synchronizedTagSuccessfullyAdded) {
                 console.log(`${new Date().toISOString()} | ERROR | ${issueKey} | ${worklog.durationInMinutes}m | from: ${worklog.started} | id: ${worklog.id} | Add Synchronized tag to Clockify time entry was not successful`);
                 worklogsWithError.push({ issueKey: issueKey, durationInMinutes: worklog.durationInMinutes, comment: comment, started: worklog.start });
@@ -182,8 +207,7 @@ async function getIssueFromJira(issueKey, jiraEmail, jiraToken) {
     return parsedResponse;
 }
 
-async function addSynchronizedTagToClockifyWorklog(worklog, clockifyApiKey) {
-    const synchronizedTagId = await getSynchronizedTagInClockify(worklog.workspaceId, clockifyApiKey);
+async function addSynchronizedTagToClockifyWorklog(worklog, synchronizedTagId, clockifyApiKey) {
     let worklogTagIds = worklog.clockifyDetails.tagIds;
     if (!worklogTagIds) {
         worklogTagIds = [synchronizedTagId];
