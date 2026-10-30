@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", function () {
       alert("A szinkronizálás sikeres volt.");
     } catch (error) {
       console.log(error);
+      alert("Sikertelen szinkronizáció");
     }
 
   }, false);
